@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Twitch Clips Viewer</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main class="popup">
+    <header class="popup-header">
+      <h1 id="popup-title">Twitch Clips</h1>
+      <p id="popup-subtitle">Browse all clips from a channel</p>
+    </header>
+
+    <section class="section">
+      <label id="channel-label" for="channel-input">Channel name</label>
+      <input
+        id="channel-input"
+        type="text"
+        placeholder="e.g. shroud"
+        autocomplete="off"
+        spellcheck="false"
+      >
+      <button id="open-clips-btn" class="btn btn-primary" type="button">Open clips</button>
+      <p id="channel-error" class="error hidden"></p>
+    </section>
+
+    <section class="section section-settings">
+      <button id="toggle-settings" class="link-btn" type="button">Twitch API settings</button>
+      <div id="settings-panel" class="settings-panel hidden">
+        <p id="api-hint" class="hint"></p>
+        <label for="client-id">Client ID</label>
+        <input id="client-id" type="text" autocomplete="off" spellcheck="false">
+        <label for="client-secret">Client Secret</label>
+        <input id="client-secret" type="password" autocomplete="off" spellcheck="false">
+        <button id="save-settings-btn" class="btn" type="button">Save</button>
+        <p id="settings-status" class="status hidden"></p>
+      </div>
+    </section>
+  </main>
+
+  <script src="popup.js" type="module"></script>
+</body>
+</html>

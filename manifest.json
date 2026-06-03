@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "Twitch Clips Viewer",
+  "version": "1.0.10",
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; img-src 'self' https: data:; media-src https://production.assets.clips.twitchcdn.net https://clips-media-assets2.twitch.tv;"
+  },
+  "description": "Browse all clips from a Twitch channel with pagination and sorting",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png"
+    },
+    "default_title": "Twitch Clips Viewer"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "permissions": ["storage"],
+  "options_page": "pages/options.html",
+  "host_permissions": [
+    "https://api.twitch.tv/*",
+    "https://id.twitch.tv/*",
+    "https://gql.twitch.tv/*",
+    "https://production.assets.clips.twitchcdn.net/*",
+    "https://clips-media-assets2.twitch.tv/*"
+  ]
+}

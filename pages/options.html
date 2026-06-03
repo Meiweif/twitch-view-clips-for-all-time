@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Twitch Clips Viewer — Settings</title>
+  <link rel="stylesheet" href="../popup/popup.css">
+  <style>
+    body { width: auto; min-height: 100vh; padding: 24px; }
+    .popup { max-width: 420px; margin: 0 auto; }
+  </style>
+</head>
+<body>
+  <main class="popup">
+    <header class="popup-header">
+      <h1>Twitch API settings</h1>
+      <p>Enter your dev.twitch.tv app credentials</p>
+    </header>
+
+    <section class="section">
+      <p class="hint">
+        Create an app at
+        <a href="https://dev.twitch.tv/console/apps" target="_blank" rel="noopener noreferrer">dev.twitch.tv</a>.
+        App type: <strong>Confidential</strong>. Keys are verified automatically after saving.
+      </p>
+      <label for="client-id">Client ID</label>
+      <input id="client-id" type="text" autocomplete="off" spellcheck="false">
+      <label for="client-secret">Client Secret</label>
+      <input id="client-secret" type="password" autocomplete="off" spellcheck="false">
+      <button id="save-settings-btn" class="btn btn-primary" type="button">Save</button>
+      <p id="settings-status" class="status hidden"></p>
+    </section>
+  </main>
+
+  <script type="module">
+    import { tr } from '../lib/i18n.js';
+
+    const clientIdInput = document.getElementById('client-id');
+    const clientSecretInput = document.getElementById('client-secret');
+    const saveSettingsBtn = document.getElementById('save-settings-btn');
+    const settingsStatus = document.getElementById('settings-status');
+
+    async function loadSettings() {
+      const response = await chrome.runtime.sendMessage({ type: 'GET_SETTINGS' });
+      if (!response?.ok) {
+        return;
+      }
+
+      clientIdInput.value = response.clientId || '';
+      clientSecretInput.value = response.clientSecret || '';
+    }
+
+    function showSettingsStatus(message, isError = false) {
+      settingsStatus.textContent = message;
+      settingsStatus.classList.remove('hidden');
+      settingsStatus.classList.toggle('error', isError);
+    }
+
+    saveSettingsBtn.addEventListener('click', async () => {
+      saveSettingsBtn.disabled = true;
+      saveSettingsBtn.textContent = tr('saving');
+
+      try {
+        const response = await chrome.runtime.sendMessage({
+          type: 'SAVE_CREDENTIALS',
+          clientId: clientIdInput.value,
+          clientSecret: clientSecretInput.value
+        });
+
+        if (!response?.ok) {
+          showSettingsStatus(response?.error || tr('saveFailed'), true);
+          return;
+        }
+
+        showSettingsStatus(response.message || tr('saved'));
+      } finally {
+        saveSettingsBtn.disabled = false;
+        saveSettingsBtn.textContent = tr('save');
+      }
+    });
+
+    loadSettings();
+  </script>
+</body>
+</html>
