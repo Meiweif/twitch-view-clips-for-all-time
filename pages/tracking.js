@@ -3,9 +3,14 @@ import { loadAllClips } from '../lib/clip-loader.js';
 import { VERIFIED_BADGE_URL } from '../lib/clip-player.js';
 import { getCreatorStats, formatLongDate, getClipThumbUrl } from '../lib/creator-stats.js';
 import { tr, translateError, DATE_LOCALE } from '../lib/i18n.js';
+import {
+  parseChannelInput,
+  filterChannelInputValue,
+  verifyChannelLogin,
+  applyChannelInputPaste
+} from '../lib/channel-input.js';
 
 const PAGE_SIZE = 100;
-const CHANNEL_INPUT_PATTERN = /[^a-zA-Z0-9_]/g;
 const LOAD_CANCELLED = 'LOAD_CANCELLED';
 
 const dateLocale = DATE_LOCALE;
@@ -28,8 +33,10 @@ const statusText = document.getElementById('status-text');
 const statusSubtext = document.getElementById('status-subtext');
 const contentPanel = document.getElementById('content-panel');
 const loadingBanner = document.getElementById('loading-banner');
+const loadingBannerSpinner = document.getElementById('loading-banner-spinner');
 const loadingBannerText = document.getElementById('loading-banner-text');
 const cancelLoadBtn = document.getElementById('cancel-load-btn');
+const resumeLoadBtn = document.getElementById('resume-load-btn');
 const errorPanel = document.getElementById('error-panel');
 const errorText = document.getElementById('error-text');
 const clipsBody = document.getElementById('clips-body');
@@ -39,15 +46,16 @@ const prevButtons = document.querySelectorAll('.prev-btn');
 const nextButtons = document.querySelectorAll('.next-btn');
 const searchInput = document.getElementById('search-input');
 const sortSelect = document.getElementById('sort-select');
-const sortTrigger = sortSelect.querySelector('.custom-select-trigger');
-const sortValue = sortSelect.querySelector('.custom-select-value');
-const sortMenu = sortSelect.querySelector('.custom-select-menu');
-const sortOptions = sortSelect.querySelectorAll('.custom-select-option');
+const sortTrigger = sortSelect.querySelector('.sort-select-trigger');
+const sortValue = sortSelect.querySelector('.sort-select-value');
+const sortMenu = sortSelect.querySelector('.sort-select-menu');
+const sortOptions = sortSelect.querySelectorAll('.sort-select-option');
 const refreshBtn = document.getElementById('refresh-btn');
 const changeChannelBtn = document.getElementById('change-channel-btn');
 const openSettingsBtn = document.getElementById('open-settings-btn');
 const channelModal = document.getElementById('channel-modal');
 const channelModalInput = document.getElementById('channel-modal-input');
+const channelModalError = document.getElementById('channel-modal-error');
 const channelModalCancel = document.getElementById('channel-modal-cancel');
 const channelModalSubmit = document.getElementById('channel-modal-submit');
 const clipModal = document.getElementById('clip-modal');
@@ -89,6 +97,8 @@ const state = {
   clipFetchController: null,
   clipSources: [],
   loadAbortController: null,
+  loadResume: null,
+  skipLeaveConfirm: false,
   popoverDrag: null,
   openPopoverCreatorId: null,
   confirmCallback: null,
@@ -106,7 +116,11 @@ async function apiGet(path) {
 }
 
 function normalizeChannel(value) {
-  return value.trim().replace(/^@/, '').toLowerCase();
+  return parseChannelInput(value);
+}
+
+async function verifyChannel(login) {
+  return verifyChannelLogin(login);
 }
 
 function showStatus(message, subtext = '') {
@@ -131,6 +145,26 @@ function showError(message) {
   hideLoadingBanner();
 }
 
+function canResumeLoad(resumeState) {
+  if (!resumeState) {
+    return false;
+  }
+
+  if (!resumeState.quickPhaseDone) {
+    return true;
+  }
+
+  return resumeState.completedWindows < resumeState.totalWindows;
+}
+
+function updateLoadResumeFromProgress(resumeState) {
+  if (resumeState === undefined) {
+    return;
+  }
+
+  state.loadResume = canResumeLoad(resumeState) ? resumeState : null;
+}
+
 function showContent() {
   statusPanel.classList.add('hidden');
   errorPanel.classList.add('hidden');
@@ -138,21 +172,44 @@ function showContent() {
 }
 
 function showLoadingBanner(message) {
+  loadingBanner.classList.remove('hidden', 'loading-banner--paused');
+  loadingBannerSpinner.classList.remove('hidden');
+  cancelLoadBtn.classList.remove('hidden');
+  resumeLoadBtn.classList.add('hidden');
   loadingBannerText.textContent = message;
+}
+
+function showPausedLoadingBanner(message) {
   loadingBanner.classList.remove('hidden');
+  loadingBanner.classList.add('loading-banner--paused');
+  loadingBannerSpinner.classList.add('hidden');
+  cancelLoadBtn.classList.add('hidden');
+  resumeLoadBtn.classList.remove('hidden');
+  loadingBannerText.textContent = message;
 }
 
 function hideLoadingBanner() {
   loadingBanner.classList.add('hidden');
+  loadingBanner.classList.remove('loading-banner--paused');
+  loadingBannerSpinner.classList.remove('hidden');
+  cancelLoadBtn.classList.remove('hidden');
+  resumeLoadBtn.classList.add('hidden');
 }
 
 function formatDate(iso) {
   const date = new Date(iso);
-  return date.toLocaleDateString(dateLocale, {
+  const datePart = date.toLocaleDateString(dateLocale, {
     day: 'numeric',
     month: 'short',
     year: 'numeric'
   });
+  const timePart = date.toLocaleTimeString(dateLocale, {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  });
+
+  return `<span class="clip-date">${datePart}</span><span class="clip-time">${timePart}</span>`;
 }
 
 function formatDuration(seconds) {
@@ -345,8 +402,13 @@ function renderPopoverClipBlock(label, clip) {
 }
 
 function positionUserPopover(anchorEl) {
+  if (!anchorEl) {
+    return;
+  }
+
   const rect = anchorEl.getBoundingClientRect();
-  const popoverWidth = 360;
+  const popoverWidth = userPopover.offsetWidth || 360;
+  const popoverHeight = userPopover.offsetHeight || 320;
   let left = rect.left;
   let top = rect.bottom + 8;
 
@@ -354,7 +416,6 @@ function positionUserPopover(anchorEl) {
     left = window.innerWidth - popoverWidth - 12;
   }
 
-  const popoverHeight = userPopover.offsetHeight;
   if (top + popoverHeight > window.innerHeight - 12) {
     top = Math.max(12, rect.top - popoverHeight - 8);
   }
@@ -578,6 +639,7 @@ function closeSortMenu() {
 }
 
 function openChannelModal() {
+  hideChannelModalError();
   channelModalInput.value = channel;
   channelModal.classList.remove('hidden');
   channelModalInput.focus();
@@ -586,6 +648,17 @@ function openChannelModal() {
 
 function closeChannelModal() {
   channelModal.classList.add('hidden');
+  hideChannelModalError();
+}
+
+function showChannelModalError(message) {
+  channelModalError.textContent = message;
+  channelModalError.classList.remove('hidden');
+}
+
+function hideChannelModalError() {
+  channelModalError.textContent = '';
+  channelModalError.classList.add('hidden');
 }
 
 function showConfirmDialog(message, onConfirm, okLabel = tr('confirmStop')) {
@@ -661,26 +734,39 @@ async function downloadCurrentClip() {
   }
 }
 
-function filterChannelInputValue(value) {
-  return value.replace(CHANNEL_INPUT_PATTERN, '');
+function filterChannelInputValueLocal(value) {
+  return filterChannelInputValue(value);
 }
 
 function sanitizeChannelInput(input) {
-  const filtered = filterChannelInputValue(input.value);
+  const filtered = filterChannelInputValueLocal(input.value);
   if (filtered !== input.value) {
     input.value = filtered;
   }
 }
 
-function navigateToChannel(nextChannel) {
+async function navigateToChannel(nextChannel) {
+  hideChannelModalError();
+
   const normalized = normalizeChannel(nextChannel);
   if (!normalized) {
+    showChannelModalError(tr('channelRequired'));
     return;
   }
 
-  window.location.href = chrome.runtime.getURL(
-    `pages/tracking.html?channel=${encodeURIComponent(normalized)}`
-  );
+  channelModalSubmit.disabled = true;
+
+  try {
+    await verifyChannel(normalized);
+    state.skipLeaveConfirm = true;
+    window.location.href = chrome.runtime.getURL(
+      `pages/tracking.html?channel=${encodeURIComponent(normalized)}`
+    );
+  } catch (error) {
+    showChannelModalError(translateError(error));
+  } finally {
+    channelModalSubmit.disabled = false;
+  }
 }
 
 async function loadClipVideo(sourceUrl, loadGeneration) {
@@ -889,7 +975,7 @@ function closeClipModal() {
   }
 }
 
-async function loadClips(forceRefresh = false) {
+async function loadClips(forceRefresh = false, resume = false) {
   if (!channel) {
     showError(tr('noChannelInUrl'));
     return;
@@ -899,56 +985,92 @@ async function loadClips(forceRefresh = false) {
     return;
   }
 
+  if (resume && !canResumeLoad(state.loadResume)) {
+    return;
+  }
+
+  const resumeCheckpoint = resume
+    ? {
+        completedWindows: state.loadResume.completedWindows,
+        quickPhaseDone: Boolean(state.loadResume.quickPhaseDone),
+        clips: state.allClips
+      }
+    : null;
+
   state.loadAbortController?.abort();
   state.loadAbortController = new AbortController();
   const loadSignal = state.loadAbortController.signal;
 
+  if (resume && !state.broadcaster?.id) {
+    showError(tr('loadError'));
+    return;
+  }
+
   state.loading = true;
-  showStatus(
-    tr('loadingClipsChannel', { channel }),
-    tr('loadingClipsHint')
-  );
-  pageTitle.textContent = tr('pageClipsNamed', { channel });
-  document.title = tr('pageTitleNamed', { channel });
-  hideLoadingBanner();
+
+  if (!resume) {
+    state.loadResume = null;
+    showStatus(
+      tr('loadingClipsChannel', { channel }),
+      tr('loadingClipsHint')
+    );
+    pageTitle.textContent = tr('pageClipsNamed', { channel });
+    document.title = tr('pageTitleNamed', { channel });
+    hideLoadingBanner();
+  } else {
+    showLoadingBanner(tr('loadingRest'));
+  }
 
   try {
-    const cacheResponse = await chrome.runtime.sendMessage({
-      type: 'GET_CACHED_CLIPS',
-      channel,
-      forceRefresh
-    });
+    if (!resume) {
+      const cacheResponse = await chrome.runtime.sendMessage({
+        type: 'GET_CACHED_CLIPS',
+        channel,
+        forceRefresh
+      });
 
     if (cacheResponse?.cached) {
+      state.loadResume = null;
       state.allClips = cacheResponse.clips;
-      state.broadcaster = cacheResponse.broadcaster;
+        state.broadcaster = cacheResponse.broadcaster;
+        state.currentPage = 1;
+        updateBroadcasterInfo(cacheResponse.total);
+        showContent();
+        renderTable();
+        return;
+      }
+
+      const broadcasterResponse = await chrome.runtime.sendMessage({
+        type: 'GET_BROADCASTER',
+        login: channel
+      });
+
+      if (!broadcasterResponse?.ok) {
+        throw new Error(broadcasterResponse?.error || tr('errChannelNotFound', { login: channel }));
+      }
+
+      state.broadcaster = broadcasterResponse.broadcaster;
+      state.allClips = [];
       state.currentPage = 1;
-      updateBroadcasterInfo(cacheResponse.total);
-      showContent();
-      renderTable();
-      return;
     }
 
-    const broadcasterResponse = await chrome.runtime.sendMessage({
-      type: 'GET_BROADCASTER',
-      login: channel
-    });
+    let shownPartial = resume;
 
-    if (!broadcasterResponse?.ok) {
-      throw new Error(broadcasterResponse?.error || tr('errChannelNotFound', { login: channel }));
-    }
-
-    state.broadcaster = broadcasterResponse.broadcaster;
-    state.allClips = [];
-    state.currentPage = 1;
-
-    let shownPartial = false;
+    const resumeState = resume
+      ? {
+          clips: resumeCheckpoint.clips,
+          completedWindows: resumeCheckpoint.completedWindows,
+          quickPhaseDone: resumeCheckpoint.quickPhaseDone
+        }
+      : null;
 
     const clips = await loadAllClips(state.broadcaster.id, apiGet, (progress) => {
       if (progress.clips) {
         state.allClips = progress.clips;
         updateBroadcasterInfo(state.allClips.length);
       }
+
+      updateLoadResumeFromProgress(progress.resumeState);
 
       if (progress.phase === 'partial' && !shownPartial) {
         shownPartial = true;
@@ -965,8 +1087,13 @@ async function loadClips(forceRefresh = false) {
       }
 
       if (progress.phase === 'cancelled') {
-        hideLoadingBanner();
+        updateLoadResumeFromProgress(progress.resumeState);
         showContent();
+        if (state.loadResume) {
+          showPausedLoadingBanner(progress.message);
+        } else {
+          hideLoadingBanner();
+        }
         renderTable();
         return;
       }
@@ -974,30 +1101,33 @@ async function loadClips(forceRefresh = false) {
       if (progress.phase === 'quick') {
         showStatus(tr('loadingClipsChannel', { channel }), progress.message);
       }
-    }, loadSignal);
+    }, loadSignal, resumeState);
 
     state.allClips = clips;
     updateBroadcasterInfo(clips.length);
 
-    if (!loadSignal.aborted) {
-      await chrome.runtime.sendMessage({
-        type: 'SAVE_CLIPS_CACHE',
-        channel,
-        payload: {
-          channel: normalizeChannel(channel),
-          broadcaster: state.broadcaster,
-          clips,
-          total: clips.length
-        }
-      });
+    if (loadSignal.aborted) {
+      return;
     }
+
+    state.loadResume = null;
+
+    await chrome.runtime.sendMessage({
+      type: 'SAVE_CLIPS_CACHE',
+      channel,
+      payload: {
+        channel: normalizeChannel(channel),
+        broadcaster: state.broadcaster,
+        clips,
+        total: clips.length
+      }
+    });
 
     hideLoadingBanner();
     showContent();
     renderTable();
   } catch (error) {
     if (loadSignal.aborted) {
-      hideLoadingBanner();
       showContent();
       renderTable();
       return;
@@ -1099,7 +1229,11 @@ document.addEventListener('click', (event) => {
     closeSortMenu();
   }
 
-  if (!userPopover.contains(event.target) && !event.target.closest('.creator-link')) {
+  if (!userPopover.contains(event.target)
+    && !event.target.closest('.creator-link')
+    && !event.target.closest('#clip-modal')
+    && !event.target.closest('.clip-thumb-btn')
+    && !event.target.closest('.user-popover-clip-btn')) {
     closeUserPopover();
   }
 });
@@ -1130,6 +1264,10 @@ channelModalInput.addEventListener('input', () => {
   sanitizeChannelInput(channelModalInput);
 });
 
+channelModalInput.addEventListener('paste', (event) => {
+  applyChannelInputPaste(event, channelModalInput);
+});
+
 channelModalInput.addEventListener('keydown', (event) => {
   if (event.key === 'Enter') {
     navigateToChannel(channelModalInput.value);
@@ -1147,6 +1285,13 @@ clipQualitySelect.addEventListener('change', () => {
 });
 
 cancelLoadBtn.addEventListener('click', cancelClipLoading);
+resumeLoadBtn.addEventListener('click', () => {
+  if (state.loading || !canResumeLoad(state.loadResume)) {
+    return;
+  }
+
+  loadClips(false, true);
+});
 
 confirmModalCancel.addEventListener('click', closeConfirmDialog);
 confirmModal.querySelector('[data-close-confirm]').addEventListener('click', closeConfirmDialog);
@@ -1198,6 +1343,7 @@ function applyPageTranslations() {
   userPopoverClose.setAttribute('aria-label', tr('close'));
   userPopoverHeader.title = tr('dragPopover');
   cancelLoadBtn.textContent = tr('cancel');
+  resumeLoadBtn.textContent = tr('continueLoad');
   loadingBannerText.textContent = tr('loadingRest');
 
   prevButtons.forEach((button) => {
@@ -1216,7 +1362,8 @@ function applyPageTranslations() {
   });
 
   sortOptions.forEach((option) => {
-    option.textContent = tr(SORT_KEYS[option.dataset.value]);
+    option.querySelector('.sort-select-option-label').textContent = tr(SORT_KEYS[option.dataset.value]);
+    option.classList.toggle('selected', option.dataset.value === state.sort);
   });
   sortValue.textContent = tr(SORT_KEYS[state.sort]);
 
@@ -1229,5 +1376,14 @@ async function initPage() {
   applyPageTranslations();
   await loadClips();
 }
+
+window.addEventListener('beforeunload', (event) => {
+  if (state.skipLeaveConfirm) {
+    return;
+  }
+
+  event.preventDefault();
+  event.returnValue = tr('leavePageConfirm');
+});
 
 initPage();

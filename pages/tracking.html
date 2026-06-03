@@ -1,155 +1,354 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Twitch Clips Viewer</title>
-  <link rel="stylesheet" href="tracking.css">
-</head>
-<body>
-  <div class="app">
-    <header class="top-bar">
-      <div class="brand">
-        <img id="channel-avatar" class="channel-avatar hidden" alt="" width="32" height="32">
-        <div>
-          <h1 id="page-title">Channel clips</h1>
-          <p id="channel-subtitle" class="subtitle"></p>
-        </div>
-      </div>
-      <div class="top-actions">
-        <button id="change-channel-btn" class="btn" type="button">Change channel</button>
-        <button id="refresh-btn" class="btn btn-secondary" type="button">Refresh</button>
-      </div>
-    </header>
-
-    <section id="status-panel" class="status-panel">
-      <div class="loader"></div>
-      <p id="status-text">Loading clips...</p>
-      <p id="status-subtext" class="status-subtext hidden"></p>
-    </section>
-
-    <section id="content-panel" class="content-panel hidden">
-      <div id="loading-banner" class="loading-banner hidden">
-        <div class="loader loader-small"></div>
-        <span id="loading-banner-text">Loading remaining clips...</span>
-        <button id="cancel-load-btn" class="btn loading-banner-cancel" type="button">Cancel</button>
-      </div>
-
-      <div class="pagination-bar">
-        <button class="btn prev-btn" type="button" disabled>Back</button>
-        <span class="page-info">Page 1 of 1</span>
-        <button class="btn next-btn" type="button" disabled>Next</button>
-      </div>
-
-      <div class="toolbar">
-        <input
-          id="search-input"
-          class="search-input"
-          type="search"
-          placeholder="Search clips..."
-          autocomplete="off"
-        >
-        <div id="sort-select" class="custom-select">
-          <button type="button" class="custom-select-trigger" aria-haspopup="listbox" aria-expanded="false">
-            <span class="custom-select-value">Oldest first</span>
-            <span class="custom-select-arrow" aria-hidden="true"></span>
-          </button>
-          <ul class="custom-select-menu hidden" role="listbox">
-            <li class="custom-select-option selected" role="option" data-value="oldest">Oldest first</li>
-            <li class="custom-select-option" role="option" data-value="newest">Newest first</li>
-            <li class="custom-select-option" role="option" data-value="popular">Most popular</li>
-            <li class="custom-select-option" role="option" data-value="unpopular">Least views</li>
-          </ul>
-        </div>
-      </div>
-
-      <div class="table-wrap">
-        <table class="clips-table">
-          <thead>
-            <tr>
-              <th class="col-num">#</th>
-              <th class="col-creator">Username</th>
-              <th class="col-clip">Clip</th>
-              <th class="col-date">Created</th>
-              <th class="col-views">Views</th>
-              <th class="col-duration">Duration</th>
-            </tr>
-          </thead>
-          <tbody id="clips-body"></tbody>
-        </table>
-      </div>
-
-      <p id="empty-state" class="empty-state hidden">No clips found</p>
-
-      <div class="pagination-bar pagination-bar-bottom">
-        <button class="btn prev-btn" type="button" disabled>Back</button>
-        <span class="page-info">Page 1 of 1</span>
-        <button class="btn next-btn" type="button" disabled>Next</button>
-      </div>
-    </section>
-
-    <section id="error-panel" class="error-panel hidden">
-      <p id="error-text"></p>
-      <button id="open-settings-btn" class="btn btn-secondary" type="button">Open settings</button>
-    </section>
-  </div>
-
-  <div id="channel-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="channel-modal-title">
-    <div class="modal-backdrop" data-close-modal></div>
-    <div class="modal-card">
-      <h2 id="channel-modal-title">Change channel</h2>
-      <label id="channel-modal-label" for="channel-modal-input">Channel name</label>
-      <input id="channel-modal-input" type="text" placeholder="e.g. shroud" autocomplete="off" spellcheck="false">
-      <div class="modal-actions">
-        <button id="channel-modal-cancel" class="btn" type="button">Cancel</button>
-        <button id="channel-modal-submit" class="btn btn-secondary" type="button">Open</button>
-      </div>
-    </div>
-  </div>
-
-  <div id="confirm-modal" class="modal confirm-modal hidden" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title">
-    <div class="modal-backdrop" data-close-confirm></div>
-    <div class="modal-card">
-      <h2 id="confirm-modal-title">Confirm</h2>
-      <p id="confirm-modal-text" class="confirm-modal-text"></p>
-      <div class="modal-actions">
-        <button id="confirm-modal-cancel" class="btn" type="button">Cancel</button>
-        <button id="confirm-modal-ok" class="btn btn-secondary" type="button">Stop</button>
-      </div>
-    </div>
-  </div>
-
-  <div id="clip-modal" class="clip-modal hidden" role="dialog" aria-modal="true" aria-labelledby="clip-modal-title">
-    <div class="clip-modal-backdrop" data-close-clip></div>
-    <div class="clip-modal-card">
-      <button id="clip-modal-close" class="clip-modal-close" type="button" aria-label="Close">×</button>
-      <p id="clip-modal-title" class="clip-modal-title"></p>
-      <div class="clip-modal-controls">
-        <label for="clip-quality-select" class="clip-quality-label">Quality</label>
-        <select id="clip-quality-select" class="clip-quality-select hidden"></select>
-        <button id="clip-download-btn" class="btn clip-download-btn" type="button" disabled>Download</button>
-      </div>
-      <div class="clip-modal-player-wrap">
-        <video id="clip-player" class="clip-player hidden" controls autoplay playsinline></video>
-        <p id="clip-player-loading" class="clip-player-status">Loading clip...</p>
-        <p id="clip-player-error" class="clip-player-status clip-player-error hidden"></p>
-      </div>
-      <a id="clip-open-link" class="clip-open-link hidden" href="#" target="_blank" rel="noopener noreferrer">Open on Twitch</a>
-    </div>
-  </div>
-
-  <div id="user-popover" class="user-popover hidden" role="dialog" aria-labelledby="user-popover-title">
-    <button id="user-popover-close" class="user-popover-close" type="button" aria-label="Close">×</button>
-    <div class="user-popover-header" title="Drag to move">
-      <img id="user-popover-avatar" class="user-popover-avatar" alt="" width="40" height="40">
-      <div class="user-popover-header-text">
-        <div id="user-popover-title" class="user-popover-title"></div>
-        <p id="user-popover-subtitle" class="user-popover-subtitle"></p>
-      </div>
-    </div>
-    <div id="user-popover-body" class="user-popover-body"></div>
-  </div>
-
-  <script src="tracking.js" type="module"></script>
-</body>
-</html>
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+
+  <meta charset="UTF-8">
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Twitch Clips Viewer</title>
+
+  <link rel="stylesheet" href="tracking.css">
+
+</head>
+
+<body>
+
+  <div class="app">
+
+    <header class="top-bar">
+
+      <div class="brand">
+
+        <img id="channel-avatar" class="channel-avatar hidden" alt="" width="32" height="32">
+
+        <div>
+
+          <h1 id="page-title">Channel clips</h1>
+
+          <p id="channel-subtitle" class="subtitle"></p>
+
+        </div>
+
+      </div>
+
+      <div class="top-actions">
+
+        <button id="change-channel-btn" class="btn" type="button">Change channel</button>
+
+        <button id="refresh-btn" class="btn btn-secondary" type="button">Refresh</button>
+
+      </div>
+
+    </header>
+
+
+
+    <section id="status-panel" class="status-panel">
+
+      <div class="loader"></div>
+
+      <p id="status-text">Loading clips...</p>
+
+      <p id="status-subtext" class="status-subtext hidden"></p>
+
+    </section>
+
+
+
+    <section id="content-panel" class="content-panel hidden">
+
+      <div id="loading-banner" class="loading-banner hidden">
+
+        <div id="loading-banner-spinner" class="loader loader-small"></div>
+
+        <span id="loading-banner-text">Loading remaining clips...</span>
+
+        <button id="cancel-load-btn" class="btn loading-banner-cancel" type="button">Cancel</button>
+
+        <button id="resume-load-btn" class="btn btn-secondary loading-banner-resume hidden" type="button">Continue loading clips from platform</button>
+
+      </div>
+
+
+
+      <div class="pagination-bar">
+
+        <button class="btn prev-btn" type="button" disabled>Back</button>
+
+        <span class="page-info">Page 1 of 1</span>
+
+        <button class="btn next-btn" type="button" disabled>Next</button>
+
+      </div>
+
+
+
+      <div class="toolbar">
+
+        <input
+
+          id="search-input"
+
+          class="search-input"
+
+          type="search"
+
+          placeholder="Search clips..."
+
+          autocomplete="off"
+
+        >
+
+        <div id="sort-select" class="sort-select">
+
+          <button type="button" class="sort-select-trigger" aria-haspopup="listbox" aria-expanded="false">
+
+            <span class="sort-select-value">Oldest first</span>
+
+            <span class="sort-select-chevron" aria-hidden="true"></span>
+
+          </button>
+
+          <ul class="sort-select-menu hidden" role="listbox">
+
+            <li class="sort-select-option selected" role="option" data-value="oldest">
+
+              <span class="sort-select-option-label">Oldest first</span>
+
+              <svg class="sort-select-check" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+
+                <path d="M3 8.5L6.5 12L13 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+
+              </svg>
+
+            </li>
+
+            <li class="sort-select-option" role="option" data-value="newest">
+
+              <span class="sort-select-option-label">Newest first</span>
+
+              <svg class="sort-select-check" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+
+                <path d="M3 8.5L6.5 12L13 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+
+              </svg>
+
+            </li>
+
+            <li class="sort-select-option" role="option" data-value="popular">
+
+              <span class="sort-select-option-label">Most popular</span>
+
+              <svg class="sort-select-check" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+
+                <path d="M3 8.5L6.5 12L13 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+
+              </svg>
+
+            </li>
+
+            <li class="sort-select-option" role="option" data-value="unpopular">
+
+              <span class="sort-select-option-label">Least views</span>
+
+              <svg class="sort-select-check" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+
+                <path d="M3 8.5L6.5 12L13 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+
+              </svg>
+
+            </li>
+
+          </ul>
+
+        </div>
+
+      </div>
+
+
+
+      <div class="table-wrap">
+
+        <table class="clips-table">
+
+          <thead>
+
+            <tr>
+
+              <th class="col-num">#</th>
+
+              <th class="col-creator">Username</th>
+
+              <th class="col-clip">Clip</th>
+
+              <th class="col-date">Created</th>
+
+              <th class="col-views">Views</th>
+
+              <th class="col-duration">Duration</th>
+
+            </tr>
+
+          </thead>
+
+          <tbody id="clips-body"></tbody>
+
+        </table>
+
+      </div>
+
+
+
+      <p id="empty-state" class="empty-state hidden">No clips found</p>
+
+
+
+      <div class="pagination-bar pagination-bar-bottom">
+
+        <button class="btn prev-btn" type="button" disabled>Back</button>
+
+        <span class="page-info">Page 1 of 1</span>
+
+        <button class="btn next-btn" type="button" disabled>Next</button>
+
+      </div>
+
+    </section>
+
+
+
+    <section id="error-panel" class="error-panel hidden">
+
+      <p id="error-text"></p>
+
+      <button id="open-settings-btn" class="btn btn-secondary" type="button">Open settings</button>
+
+    </section>
+
+  </div>
+
+
+
+  <div id="channel-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="channel-modal-title">
+
+    <div class="modal-backdrop" data-close-modal></div>
+
+    <div class="modal-card">
+
+      <h2 id="channel-modal-title">Change channel</h2>
+
+      <label id="channel-modal-label" for="channel-modal-input">Channel name</label>
+
+      <input id="channel-modal-input" type="text" placeholder="e.g. shroud" autocomplete="off" spellcheck="false">
+
+      <p id="channel-modal-error" class="modal-error hidden"></p>
+
+      <div class="modal-actions">
+
+        <button id="channel-modal-cancel" class="btn" type="button">Cancel</button>
+
+        <button id="channel-modal-submit" class="btn btn-secondary" type="button">Open</button>
+
+      </div>
+
+    </div>
+
+  </div>
+
+
+
+  <div id="confirm-modal" class="modal confirm-modal hidden" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title">
+
+    <div class="modal-backdrop" data-close-confirm></div>
+
+    <div class="modal-card">
+
+      <h2 id="confirm-modal-title">Confirm</h2>
+
+      <p id="confirm-modal-text" class="confirm-modal-text"></p>
+
+      <div class="modal-actions">
+
+        <button id="confirm-modal-cancel" class="btn" type="button">Cancel</button>
+
+        <button id="confirm-modal-ok" class="btn btn-secondary" type="button">Stop</button>
+
+      </div>
+
+    </div>
+
+  </div>
+
+
+
+  <div id="clip-modal" class="clip-modal hidden" role="dialog" aria-modal="true" aria-labelledby="clip-modal-title">
+
+    <div class="clip-modal-backdrop" data-close-clip></div>
+
+    <div class="clip-modal-card">
+
+      <button id="clip-modal-close" class="clip-modal-close" type="button" aria-label="Close">×</button>
+
+      <p id="clip-modal-title" class="clip-modal-title"></p>
+
+      <div class="clip-modal-controls">
+
+        <label for="clip-quality-select" class="clip-quality-label">Quality</label>
+
+        <select id="clip-quality-select" class="clip-quality-select hidden"></select>
+
+        <button id="clip-download-btn" class="btn clip-download-btn" type="button" disabled>Download</button>
+
+      </div>
+
+      <div class="clip-modal-player-wrap">
+
+        <video id="clip-player" class="clip-player hidden" controls autoplay playsinline></video>
+
+        <p id="clip-player-loading" class="clip-player-status">Loading clip...</p>
+
+        <p id="clip-player-error" class="clip-player-status clip-player-error hidden"></p>
+
+      </div>
+
+      <a id="clip-open-link" class="clip-open-link hidden" href="#" target="_blank" rel="noopener noreferrer">Open on Twitch</a>
+
+    </div>
+
+  </div>
+
+
+
+  <div id="user-popover" class="user-popover hidden" role="dialog" aria-labelledby="user-popover-title">
+
+    <button id="user-popover-close" class="user-popover-close" type="button" aria-label="Close">×</button>
+
+    <div class="user-popover-header" title="Drag to move">
+
+      <img id="user-popover-avatar" class="user-popover-avatar" alt="" width="40" height="40">
+
+      <div class="user-popover-header-text">
+
+        <div id="user-popover-title" class="user-popover-title"></div>
+
+        <p id="user-popover-subtitle" class="user-popover-subtitle"></p>
+
+      </div>
+
+    </div>
+
+    <div id="user-popover-body" class="user-popover-body"></div>
+
+  </div>
+
+
+
+  <script src="tracking.js" type="module"></script>
+
+</body>
+
+</html>
+

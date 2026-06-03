@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Twitch Clips Viewer",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'; img-src 'self' https: data:; media-src https://production.assets.clips.twitchcdn.net https://clips-media-assets2.twitch.tv;"
   },
